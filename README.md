@@ -1,5 +1,6 @@
 # 3Drotations
-This repository contains f95, IDL, MatLab, and C++ versions of a 3D rotations conversion library.
+This repository contains f95, IDL, MatLab, and C++ versions of a 3D rotations conversion library. 
+Current development of this package is supported by an AFOSR/MURI grant, **FA9550-12-1-0458**.
 
 The original routines were written in f95 by M. De Graef; the library contains pairwise conversion 
 routines for the following rotation representations:
