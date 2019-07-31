@@ -1,6 +1,5 @@
 % from Rodrigues vector to axis-angle pair
 
-
 function q = ro2ax(r)
 
 ta = r(4);
