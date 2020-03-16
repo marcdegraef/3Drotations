@@ -1,6 +1,6 @@
 function setGlobal_epsijk(val)
 
-global epsijk
+global epsijk;
 
 epsijk = val;
 

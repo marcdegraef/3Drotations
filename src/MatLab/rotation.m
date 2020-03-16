@@ -16,11 +16,12 @@ format long
 %          resQu - present in Quaternion
 %          resHo - present in Homochoric vector
 %          resCu - present in Cubochoric vector
+%          resSt - present in Stereographic vector
 %          [angle values in DEGREES]
 %
 % set -1 in brackets for an alternative way of doing things; 
 % set 1 for the the Morawiec version
-setGlobal_epsijk(-1);
+setGlobal_epsijk(1);
 %  In the first case, epsijk=-1, the rotation 120@[111] will result in 
 %  an axis angle pair of [111], 2pi/3.  In the second case, epsijk=+1, the axis-angle 
 %  pair will be -[111], 2pi/3.  In all cases, the rotations are interpreted
@@ -45,7 +46,7 @@ setGlobal_epsijk(-1);
 %         Quaternion: [0 0.707106781186548 -0.707106781186548 0]
 %         Homochoric: [0.940925808446189 -0.940925808446188 0]
 %         Cubochoric: [1.072514698555513 -1.072514698555513 0]
-%
+%      Stereographic: [0.707106781186548 -0.707106781186547 0]
 % NOTE: The Rodrigues vector is presented in 4 elements. This is because if
 % the angle w=n*pi, then tan(w/2)=Infinity, then the Rodrigues vector would
 % become [Inf Inf Inf]. In order to avoid this case, we present it in a
@@ -79,7 +80,8 @@ switch inputmethod
         resQu = eu2qu(aa);
         resHo = eu2ho(aa);
         resCu = eu2cu(aa);
-    
+        resSt = eu2st(aa); 
+        
     case 'om'
         % check 
         if det(aa)==0
@@ -103,6 +105,7 @@ switch inputmethod
         resQu = om2qu(aa);
         resHo = om2ho(aa);
         resCu = om2cu(aa);
+        resSt = om2st(aa); 
         
     case 'ax'
         aa(4) = aa(4)*pi/180; % angle changes to radians
@@ -128,6 +131,7 @@ switch inputmethod
         resQu = ax2qu(aa);
         resHo = ax2ho(aa);
         resCu = ax2cu(aa);
+        resSt = ax2st(aa); 
         
     case 'ro'
         % check
@@ -152,6 +156,7 @@ switch inputmethod
         resQu = ro2qu(aa);
         resHo = ro2ho(aa);
         resCu = ro2cu(aa);
+        resSt = ro2st(aa); 
         
     case 'qu'
         % check
@@ -174,6 +179,7 @@ switch inputmethod
         resAx(4) = resAx(4)*180/pi;  %change back to degrees
         resRo = qu2ro(aa);
         resQu = aa;
+        resSt = qu2st(aa); 
         resHo = qu2ho(aa);
         resCu = qu2cu(aa);
         
@@ -197,6 +203,7 @@ switch inputmethod
         resAx(4) = resAx(4)*180/pi;  %change back to degrees
         resRo = ho2ro(aa);
         resQu = ho2qu(aa);
+        resSt = ho2st(aa); 
         resHo = aa;
         resCu = ho2cu(aa);
         
@@ -221,10 +228,32 @@ switch inputmethod
         resRo = cu2ro(aa);
         resQu = cu2qu(aa);
         resHo = cu2ho(aa);
+        resSt = cu2st(aa);  
         resCu = aa;
         
         % take care of Rodrigues vector?!
+     case 'st'
+        % check
+        if length(aa)~=3
+            error('Size of stereographic vector not correct.')
+        end
+        thr = 1e-10;
+        r  = sqrt(sum(aa.*aa));
+        if (abs(r-1)>thr) 
+            error('stereographic vector must have unit norm.')
+        end
         
+        % transformation
+        resEu = st2eu(aa);
+        resEu = resEu*180/pi; %change back to degrees
+        resOm = st2om(aa);
+        resAx = st2ax(aa);
+        resAx(4) = resAx(4)*180/pi;  %change back to degrees
+        resRo = st2ro(aa);
+        resQu = st2qu(aa);
+        resHo = st2ho(aa);
+        resCu = st2cu(aa);
+        resSt = aa;  
 end
 
 resultorientations.EulerAngle = resEu;
@@ -234,4 +263,4 @@ resultorientations.RodriguesVector = resRo;
 resultorientations.Quaternion = resQu;
 resultorientations.Homochoric = resHo;
 resultorientations.Cubochoric = resCu;
-    
+resultorientations.Stereographic = resSt;   
