@@ -33,13 +33,13 @@ q3 = 0.5*sqrt(s);
 % verify the signs (q0 always positive)
 if epsijk == 1
     if om(3,2)<om(2,3)
-       q1 = -epsijkd*q1;
+       q1 = -epsijk*q1;
     end
     if om(1,3)<om(3,1)
-       q2 = -epsijkd*q2;
+       q2 = -epsijk*q2;
     end
     if om(2,1)<om(1,2)
-       q3 = -epsijkd*q3;
+       q3 = -epsijk*q3;
     end
 end
 
@@ -68,3 +68,17 @@ if (oax(3)*q(4)<0.0)
     q(4) = -q(4);
 end
 
+thr = 1e-10;
+% set values very close to 0 as 0
+if abs(q(1))<thr
+    q(1)=0;
+end
+if abs(q(2))<thr
+    q(2)=0;
+end
+if abs(q(3))<thr
+    q(3)=0;
+end
+if abs(q(4))<thr
+    q(4)=0;
+end

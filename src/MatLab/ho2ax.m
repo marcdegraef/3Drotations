@@ -3,7 +3,7 @@
 function q = ho2ax(h)
 
           
-thr = 1e-8;
+thr = 1e-10;
 tfit = [+1.0000000000018852, -0.5000000002194847, ... 
         -0.024999992127593126, - 0.003928701544781374, ...
         -0.0008152701535450438, - 0.0002009500426119712, ... 
@@ -38,10 +38,12 @@ else
 end 
 
 % set values very close to 0 as 0
-if (abs(q(1))-0)<thr
+if abs(q(1))<thr
     q(1)=0;
-elseif (abs(q(2))-0)<thr
+end
+if abs(q(2))<thr
     q(2)=0;
-elseif (abs(q(3))-0)<thr
+end
+if abs(q(3))<thr
     q(3)=0;
 end

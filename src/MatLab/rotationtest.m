@@ -1,3 +1,4 @@
+clear
 % rotation test
 format long
 setGlobal_epsijk(-1);
@@ -85,17 +86,17 @@ testangles = [ 0.0000000000000000        0.0000000000000000        0.00000000000
 
 N = size(testangles,1);
 
-filename = '/Users/Amy/Desktop/rotationtest2.txt';
+filename = 'C:\Users\ashle\ResearchProjects\3Drotations\src\MatLab\rotationtest.txt';
 
 inputfile = fopen(filename,'w+');
 fprintf(inputfile,'Number of rotations in file = %d\n',N);
 fprintf('N = %d.\n',N);
 
-rmode = ['eu'; 'ax' ;'ro';'ho';'cu';'qu';'om'];
+rmode = ['eu'; 'ax' ;'ro';'ho';'cu';'qu';'om';'st'];
 r1 = (3*pi/4)^(1/3); % homochoric limit
 ap = pi^(2/3)/2;     % cubochoric limit
 
-maxdiffmax = zeros(2,7,7,N);
+maxdiffmax = zeros(2,8,8,N);
 for ii = 1:N
     
     fprintf(inputfile,'---------------------------------------------------\n');
@@ -113,14 +114,15 @@ for ii = 1:N
     fprintf(inputfile,'                           / %3.7f %3.7f %3.7f \\ \n',results.RotationMatrix(1,1),results.RotationMatrix(1,2),results.RotationMatrix(1,3));
     fprintf(inputfile,'Rotation matrix           :| %3.7f %3.7f %3.7f |\n',results.RotationMatrix(2,1),results.RotationMatrix(2,2),results.RotationMatrix(2,3));
     fprintf(inputfile,'                           \\ %3.7f %3.7f %3.7f / \n',results.RotationMatrix(3,1),results.RotationMatrix(3,2),results.RotationMatrix(3,3));
+    fprintf(inputfile,'Stereographic representation : %3.7f %3.7f %3.7f\n',results.Stereographic(1),results.Stereographic(2),results.Stereographic(3));
     fprintf(inputfile,' \n');
     
     % pairwise tests
     diffmax = 0.0;
     tcnt = 0;
-    for aa = 1:7
+    for aa = 1:8
         fprintf(inputfile,'%s test \n',rmode(aa,:));
-        for bb = 1:7
+        for bb = 1:8
             if aa~=bb
                 forwardmode = strcat(cellstr(rmode(aa,:)),'2',cellstr(rmode(bb,:)));
                 revertmode  = strcat(cellstr(rmode(bb,:)),'2',cellstr(rmode(aa,:)));
@@ -193,6 +195,19 @@ for ii = 1:N
                     diffmax = max([diffmax,diff]);
                     tcnt = tcnt+1;
                 end
+                if strcmp(rmode(aa,:),'st')
+                    vin  = results.Stereographic;
+                    vout = revertfunc(forwardfunc(vin));
+                    aux = max(abs(vout));
+                    if (abs(aux-ap))<=1e-8
+                        diff = max(abs(vout)-abs(vin));
+                    else
+                        diff = max(abs(vout-vin));
+                    end
+                    fprintf(inputfile,'%s max st difference = %3.16f\n',forwardmode{1},diff);
+                    diffmax = max([diffmax,diff]);
+                    tcnt = tcnt+1;
+                end
                 
                 if strcmp(rmode(aa,:),'qu')
                     vin  = results.Quaternion;
@@ -232,11 +247,11 @@ for ii = 1:N
     % pairwise tests
     diffmax = 0.0;
     tcnt = 0;
-    for aa = 1:7
+    for aa = 1:8
         fprintf(inputfile,'triple %s test \n',rmode(aa,:));
-        for bb = 1:7
+        for bb = 1:8
             if aa~=bb
-                for cc = 1:7
+                for cc = 1:8
                     if (cc~=aa) && (cc~=bb)
                         
                         step12 = strcat(cellstr(rmode(aa,:)),'2',cellstr(rmode(bb,:)));
@@ -309,6 +324,20 @@ for ii = 1:N
                                 diff = max(abs(vout-vin));
                             end
                             fprintf(inputfile,'%s-%s-%s max cu difference = %3.16f\n',step31{1},step23{1},step12{1},diff);
+                            diffmax = max([diffmax,diff]);
+                            tcnt = tcnt+1;
+                        end
+                        
+                         if strcmp(rmode(aa,:),'st')
+                            vin  = results.Stereographic;
+                            vout = step31func(step23func(step12func(vin)));
+                            aux = max(abs(vout));
+                            if (abs(aux-ap))<=1e-8
+                                diff = max(abs(vout)-abs(vin));
+                            else
+                                diff = max(abs(vout-vin));
+                            end
+                            fprintf(inputfile,'%s-%s-%s max st difference = %3.16f\n',step31{1},step23{1},step12{1},diff);
                             diffmax = max([diffmax,diff]);
                             tcnt = tcnt+1;
                         end

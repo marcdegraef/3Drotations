@@ -4,7 +4,7 @@ function q = ax2ro(ax)
 
 global epsijk
 
-thr = 1e-7;
+thr = 1e-10;
 
 if (ax(4)==0.0)
    q = [0.0, 0.0, epsijk, 0.0];
@@ -22,12 +22,15 @@ else
 end
 
 % set values very close to 0 as 0
-if (abs(q(1))-0)<thr
+if abs(q(1))<thr
     q(1)=0;
-elseif (abs(q(2))-0)<thr
+end
+if abs(q(2))<thr
     q(2)=0;
-elseif (abs(q(3))-0)<thr
+end
+if abs(q(3))<thr
     q(3)=0;
-elseif (abs(q(4))-0)<thr
-    q(4)=0;    
+end
+if abs(q(4))<thr
+    q(4)=0;
 end

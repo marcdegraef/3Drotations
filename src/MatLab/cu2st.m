@@ -1,8 +1,6 @@
-% from axis-angle pair to cubochoric
-
-function res = ax2cu(ax)
-
-res = ho2cu(ax2ho(ax));
+% cubochoric vector to stereographic vector
+function res=cu2st(cu)
+res=qu2st(cu2qu(cu));
 
 thr = 1e-10;
 % set values very close to 0 as 0

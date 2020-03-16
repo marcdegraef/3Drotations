@@ -27,14 +27,17 @@ else
     q = [-c*cos(sigma), epsijk*s*cos(delta), epsijk*s*sin(delta), epsijk*c*sin(sigma)];
 end
 
-% set values very close to 0 as 0
 thr = 1e-10;
-if (abs(q(1))-0)<thr
-    q(1)=0.0;
-elseif (abs(q(2))-0)<thr
-    q(2)=0.0;
-elseif (abs(q(3))-0)<thr
-    q(3)=0.0;
-elseif (abs(q(4))-0)<thr
-    q(4)=0.0;    
+% set values very close to 0 as 0
+if abs(q(1))<thr
+    q(1)=0;
+end
+if abs(q(2))<thr
+    q(2)=0;
+end
+if abs(q(3))<thr
+    q(3)=0;
+end
+if abs(q(4))<thr
+    q(4)=0;
 end
