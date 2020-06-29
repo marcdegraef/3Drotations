@@ -28,4 +28,4 @@ The scalar IDL version was written by M. De Graef; this version was extended to 
 of rotations by D. Rowenhorst [NRL].
 The MatLab version was created by Amy Wang, then a postdoctoral researcher at CMU.
 The C++ version was created from the f95 code by Mike Jackson and Sean Donegan, and is currently part
-of the DREAM.3D package [https://github.com/dream3d/DREAM3D].
+of the [EbsdLib](https://github.com/bluequartzsoftware/EbsdLib) library and also included in the [DREAM3D](http://www.github.com/bluequartzsoftware/dream3d) package .
