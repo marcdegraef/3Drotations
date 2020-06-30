@@ -1,6 +1,7 @@
 import numpy as np
 from timeit import default_timer as timer
 from rotlib import *
+#from rotations import *
 from rotlib import quatnorm, quatconj, quat_multiply
 
 pi = np.pi
@@ -8,10 +9,12 @@ RADDEG = 180.0/pi
 # I had some issues with the periodic boundaries in cubochoric/homochoric/quaternion spaces, so I am using
 # quaternion misorientation to evaluate the error.
 
-def testrotlib():
+def testrotlib(float32=False, return_quat=False, seed = 1):
   n = np.int(1e6)
-  np.random.seed(1)
-  qu = (np.random.random((n,4))*2.0-1).astype(np.float64)
+  np.random.seed(seed)
+  qu = (np.random.random((n,4))*2.0-1)
+  if float32 is True:
+    qu = qu.astype(np.float32)
   qu = quatnorm(qu)
   qu[0, :] = np.array([1.0, 0.0, 0.0, 0.0])
   qu[1, :] = np.array([0.0,0.0,0.0,-1.0])
@@ -183,3 +186,6 @@ def testrotlib():
   print("        Time to execute: ", t1)
 
   print("Total execution time:", totaltime)
+
+  if return_quat is True:
+    return qu

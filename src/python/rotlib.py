@@ -37,9 +37,8 @@
 # This implementation is dependant on the Numba Python package, which gives a significant increase in 
 # speed (other than the first time called due to compilation time). The numba implmentation is very non-Numpy-like in that
 # Loops are not discouraged.  
-# No guarantee - but this library is typically numerically accurate to around 5e-6 degrees or better, 
-# and maximums errors of about 0.06 degrees.
-# The rotations.py is typically more accurate at the cost of being about 5-3x slower. 
+# No guarantee - but this library is typically numerically accurate to around 5e-6 degrees or better.
+# The rotations.py is typically more accurate at the cost of being about 2-10x slower.
 
 # All inputs can be numpy array-like, and either arrays of shape (n,m) OR (m)  where m is the length of a single 
 # representation (i.e. for Euler m = 3, for quaternions m = 4); in the case of orientation matrices (om)
@@ -56,8 +55,8 @@ P = 1
 eps = 1.0e-12 # used for "closeto" approximations in Numba code
 PI = np.pi
 PI2 = 2.0 * np.pi
-nbcache = True # switch to false for debugging.  
-nbParallel = True # decide if parallelism is desired.  
+nbcache = False # switch to false for debugging.
+nbParallel = True # decide if parallelism is desired.
 # Once the JIT compiler runs over the code, changing this will not change the parallelism.  
 # The package will need to be reimported
 nbFastmath = True
@@ -76,8 +75,8 @@ def prepIn(a):
   return (aout,m,n,intype)
 
 
-# Bunge Euler angles to orientation matrix
 def eu2om(eu,p=P):
+  '''Bunge Euler angles to orientation matrix'''
   om = eu2omL(np.require(eu,requirements=['C','A']),p=p)
   om = np.squeeze(om)
   return om
@@ -179,7 +178,7 @@ def eu2quL(euIn,p=P):
 
 
 def om2eu(om,p=P):
-  '''orientation matrix to Bunge Euler angles   '''
+  '''orientation matrix to Bunge Euler angles'''
   if om.ndim == 3:
     omIn = np.require(om,requirements=['C','A'])
   elif om.ndim == 2:
@@ -523,10 +522,12 @@ def qu2omL(quIn,p=P):
   # [0,0], [0,1], [0, 2], [1,0], [1,1], [1,2], [2,0], [2,1], [2,2]
   #    0      1      2      3      4      5      6      7      8
   qu = quatnormL(qu)
+
+
   for i in numba.prange(n):
     q0 = qu[i,0] * pf
     qq = q0 * q0 - (qu[i,1] ** 2 + qu[i,2] ** 2 + qu[i,3] ** 2)
-    om[i,0,0] = qq + 2.0 * qu[i,1] ** 2
+    om[i,0,0] = qq + 2.0 * qu[i,1] * qu[i,1]
     om[i,0,1] = 2.0 * (qu[i,1] * qu[i,2] - qu[i,0] * qu[i,3])
     om[i,0,2] = 2.0 * (qu[i,1] * qu[i,3] + qu[i,0] * qu[i,2])
     om[i,1,0] = 2.0 * (qu[i,2] * qu[i,1] + qu[i,0] * qu[i,3])
@@ -535,11 +536,27 @@ def qu2omL(quIn,p=P):
     om[i,2,0] = 2.0 * (qu[i,3] * qu[i,1] - qu[i,0] * qu[i,2])
     om[i,2,1] = 2.0 * (qu[i,3] * qu[i,2] + qu[i,0] * qu[i,1])
     om[i,2,2] = qq + 2.0 * qu[i,3] * qu[i,3]
+
+    tr = om[i,0,0] + om[i,1,1] + om[i,2,2]
+    t = 0.50 * (tr - 1.0)
+    if np.abs(t) > 1.0:  # there has been enough rounding to justify a re normalization of the matrix
+      #using a Gram-Schmidt normalization
+      u1 = om[i,0,:]
+      u1 /= np.linalg.norm(u1)
+      om[i,0,:] = u1
+      u2 = om[i,1,:]
+      u2 = u2-np.sum(u2*u1)*u1
+      u2 /= np.linalg.norm(u2)
+      om[i,1,:] = u2
+      u3 = om[i,2,:]
+      u3 - np.sum(u3*u1)*u1 - np.sum(u3*u2)*u2
+      u3 /= np.linalg.norm(u3)
+      om[i,2,:] = u3
+
   return om
 
-
-def om2ax(om,p=P):
-  '''orientation matrix to axis-angle (radians)  '''
+def om2ax_old(om,p=P):
+  '''orientation matrix to axis-angle (radians) -- depreciated now use qu2ax(om2qu()) '''
   if om.ndim == 3:
     omIn = np.require(om,requirements=['C','A'])
   elif om.ndim == 2:
@@ -552,7 +569,7 @@ def om2ax(om,p=P):
 
 
 @numba.jit(nopython=True,fastmath=nbFastmath, cache=nbcache, parallel=nbParallel)
-def om2axL(om, p=P):
+def om2axL(om, p=P):# depreciated now use qu2ax(om2qu()) -- kept for historical reasons.
   pf = numba.float32(p > 0) * 2.0 - 1.0
   intype = om.dtype
   n = np.int64(om.size / 9)
@@ -567,10 +584,18 @@ def om2axL(om, p=P):
     t = 1.0 if (t > 1.0) else t
     t = -1.0 if (t < -1.0) else t
     ax[i,3] = np.arccos(t)
-    if ((1.0 - np.abs(t)) > 1.0e-7):
-      ax[i,2] = pf * (om[i,1,0] - om[i,0,1])
-      ax[i,1] = pf * (om[i,0,2] - om[i,2,0])
-      ax[i,0] = pf * (om[i,2,1] - om[i,1,2])
+    #if ((1.0 - np.abs(t)) > eps):
+    mag = numba.float64(0.0)
+    ax[i,2] = pf * (om[i,1,0] - om[i,0,1])
+    mag += ax[i,2]*ax[i,2]
+    ax[i,1] = pf * (om[i,0,2] - om[i,2,0])
+    mag += ax[i,1] * ax[i,1]
+    ax[i,0] = pf * (om[i,2,1] - om[i,1,2])
+    mag += ax[i,0] * ax[i,0]
+    mag = np.sqrt(mag)
+    if mag > eps:
+      for j in range(3):
+        ax[i,j] *= 1.0/mag
     else:
       if t > 0.0:
         ax[i, 0] = 0.0
@@ -581,16 +606,118 @@ def om2axL(om, p=P):
         for j in range(3):
           d[j] = np.sqrt(0.5*(om[i,j,j]+1.0))
         dargsrt = np.argsort(d)
-        d[dargsrt[1]] = om[i, dargsrt[2], dargsrt[1] ] / (2.0 * d[dargsrt[2]])
-        d[dargsrt[0]] = om[i, dargsrt[2], dargsrt[0]] / (2.0 * d[dargsrt[2]])
+        d[dargsrt[1]] = (om[i, dargsrt[2], dargsrt[1]] + om[i, dargsrt[1], dargsrt[2] ]) / (4.0 * d[dargsrt[2]])
+        d[dargsrt[0]] = (om[i, dargsrt[2], dargsrt[0]] + om[i, dargsrt[0], dargsrt[2]]) / (4.0 * d[dargsrt[2]])
 
         for j in range(3):
-          ax[i,j] = d[j]
+          ax[i,j] = pf*d[j]
 
   ax = axnormL(ax)
   return ax
 
- 
+@numba.jit(nopython=True,fastmath=False, cache=nbcache, parallel=nbParallel)
+def om2axL_2(om, p=P): # kept for historical reasons
+  # ** not sure it gets the axis correct when angle = pi **
+  pf = numba.float32(p > 0) * 2.0 - 1.0
+  intype = om.dtype
+  n = np.int64(om.size / 9)
+  ax = np.zeros((n, 4), dtype=intype)
+  #  help for translating out of C version
+  # [0,0], [0,1], [0, 2], [1,0], [1,1], [1,2], [2,0], [2,1], [2,2]
+  #    0      1      2      3      4      5      6      7      8
+  for i in numba.prange(n):
+
+    tr = om[i,0,0] + om[i,1,1] + om[i,2,2]
+    t = 0.50 * (tr - 1.0)
+    t = 1.0 if (t > 1.0) else t
+    t = -1.0 if (t < -1.0) else t
+    ax[i,3] = np.arccos(t)
+    if (ax[i,3] < 1.0e-7):
+      ax[i,0] = 0.0
+      ax[i,1] = 0.0
+      ax[i,2] = -1.0 * pf
+    else:
+      omcomplex = np.zeros((3,3), dtype=numba.complex128)
+      omcomplex[:,:] = om[i,:,:]
+      eigval, eigvect = np.linalg.eig(omcomplex)
+      whmin = np.argmin(np.absolute(eigval-1.0))
+      vect = np.real(eigvect[:,whmin])
+      d = (om[i,2,1] - om[i,1,2])
+      if d != 0.0:
+        vect[0] = np.abs(vect[0])*np.sign(d)
+
+      d = (om[i,0,2] - om[i,2,0])
+      if d != 0.0:
+        vect[1] = np.abs(vect[1]) * np.sign(d)
+
+      d = (om[i,1,0] - om[i,0,1])
+      if d != 0.0:
+        vect[2] = np.abs(vect[2]) * np.sign(d)
+
+      ax[i,0] = pf*vect[0]
+      ax[i,1] = pf*vect[1]
+      ax[i,2] = pf*vect[2]
+  ax = axnormL(ax)
+  return ax
+
+def om2qu(om,p=P):
+  '''orientation matrix to quaternion (scalar-vector)  '''
+  if om.ndim == 3:
+    omIn = np.require(om,requirements=['C','A'])
+  elif om.ndim == 2:
+    omIn = np.require(om,requirements=['C','A']).reshape(1,3,3)
+  else:
+    return -1
+  qu = om2quL(omIn,p=p)
+  qu = np.squeeze(qu)
+  return qu
+
+
+@numba.jit(nopython=True,fastmath=nbFastmath, cache=nbcache, parallel=nbParallel)
+def om2quL(om, p=P):
+  """
+      Thanks to Martin-Diehl using the same formulation as his rotations.py package.
+      This fixes the ambiguity of the axis direction when the angle = pi.
+      This also means that om2ax is now qu2ax(om2qu())
+      This formulation is from  www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion.
+      The original formulation had issues.
+  """
+  pf = numba.float32(p > 0) * 2.0 - 1.0
+  intype = om.dtype
+  n = np.int64(om.size / 9)
+  qu = np.zeros((n, 4), dtype=intype)
+
+  for i in numba.prange(n):
+    s = 0.0
+    tr = om[i,0,0] + om[i,1,1] + om[i,2,2]
+    if tr > 0:
+      s = 0.5 / np.sqrt(tr + 1.0)
+      qu[i,0] = 0.25/s
+      qu[i,1] = s * (om[i,2,1] - om[i,1,2])
+      qu[i,2] = s * (om[i,0,2] - om[i,2,0])
+      qu[i,3] = s * (om[i,1,0] - om[i,0,1])
+    else:
+      if (om[i,0,0] > om[i,1,1]) and (om[i,0,0] > om[i,2,2]):
+        s = 2.0 * np.sqrt( 1.0 + om[i,0,0] - om[i,1,1] - om[i,2,2])
+        qu[i,0] = (om[i,2,1] - om[i,1,2]) / s
+        qu[i,1] = 0.25 * s
+        qu[i,2] = (om[i,0,1] + om[i,1,0]) / s
+        qu[i,3] = (om[i,0,2] + om[i,2,0]) / s
+      elif om[i,1,1] > om[i,2,2]:
+        s = 2.0 * np.sqrt(1.0 - om[i,0,0] + om[i,1,1] - om[i,2,2])
+        qu[i,0] = (om[i,0,2] - om[i,2,0]) / s
+        qu[i,1] = (om[i,0,1] + om[i,1,0]) / s
+        qu[i,2] = 0.25 * s
+        qu[i,3] = (om[i,1,2] + om[i,2,1]) / s
+      else:
+        s = 2.0 * np.sqrt(1.0 - om[i,0,0] - om[i,1,1] + om[i,2,2])
+        qu[i,0] = (om[i,1,0] - om[i,0,1]) / s
+        qu[i,1] = (om[i,0,2] + om[i,2,0]) / s
+        qu[i,2] = (om[i,1,2] + om[i,2,1]) / s
+        qu[i,3] = 0.25 * s
+  qu = quatnormL(qu)
+  return qu
+
 def qu2ax(qu,p=P):
   '''quaternion (scalar-vector) to axis-angle (radians)  '''
   ax = qu2axL(np.require(qu,requirements=['C','A']),p=p)
@@ -704,14 +831,131 @@ def ho2cu(ho,p=P):
   return cu
 
 
-@numba.jit(nopython=True,fastmath=nbFastmath,cache=nbcache,parallel=nbParallel)
+@numba.jit(nopython=True,fastmath=nbFastmath,cache=nbcache, parallel=nbParallel)
 def ho2cuL(hoIn,p=P):
   pf = numba.float32(p > 0) * 2.0 - 1.0
   ho,m,n,intype = prepIn(hoIn)
   cu = np.zeros((n,3),dtype=intype)
+  LPR1 = np.float(1.33067003949147)  # (3pi/4)**(1/3)
+  LPpref = np.float(1.38197659788534)  # sqrt(6/pi)
+  LPbeta = np.float(0.962874509979126)  # pi**(5/6)/6**(1/6)/2
+  LPr2 = np.float(1.4142135623731)  # sqrt(2)
+  LPpi12 = np.float(0.261799387799149)  # pi/12
+  LPsc = np.float(0.897772786961286)  # a/ap == (pi**(5/6)/6**(1/6)) / pi**(2/3)
+  eps_loc = 1e-7
+
+
 
   for i in numba.prange(n):
-    cu[i, :] = lambert3DBallToCube(ho[i,:])
+    #cu[i,:] = lambert3DBallToCube(ho[i,:])
+    # I have inlined all the function of lambert3DCubeToBall
+    # numba really dislikes nested function calls.  This was about a 10x speedup.
+    xyz = np.zeros(3,dtype=np.float64)
+    xyzcu = np.zeros(3,dtype=np.float64)
+    xyz3 = np.zeros(3,dtype=np.float64)
+    xyz2 = np.zeros(3,dtype=np.float64)
+    xyz1 = np.zeros(3,dtype=np.float64)
+    rs = 0.0
+    for j in range(3):
+      xyz[j] = ho[i,j]
+      rs += xyz[j] * xyz[j]
+    rs = np.sqrt(np.float64(max(rs,0.0)))
+
+    # if rs > (LPR1 + eps_loc):
+    #  return xyzcu-np.float64(5.0) # out of range
+    py = 10
+    if (np.abs(xyz[0]) <= xyz[2]) and (np.abs(xyz[1]) <= xyz[2]):
+      py = 1
+    if (np.abs(xyz[0]) <= -xyz[2]) and (np.abs(xyz[1]) <= -xyz[2]):
+      py = 2
+    if (np.abs(xyz[2]) <= xyz[0]) and (np.abs(xyz[1]) <= xyz[0]):
+      py = 3
+    if (np.abs(xyz[2]) <= -xyz[0]) and (np.abs(xyz[1]) <= -xyz[0]):
+      py = 4
+    if (np.abs(xyz[0]) <= xyz[1]) and (np.abs(xyz[2]) <= xyz[1]):
+      py = 5
+    if (np.abs(xyz[0]) <= -xyz[1]) and (np.abs(xyz[2]) <= -xyz[1]):
+      py = 6
+
+    if (py == 1) or (py == 2):
+      xyz3[0] = xyz[0]
+      xyz3[1] = xyz[1]
+      xyz3[2] = xyz[2]
+    if (py == 3) or (py == 4):
+      xyz3[0] = xyz[1]
+      xyz3[1] = xyz[2]
+      xyz3[2] = xyz[0]
+    if (py == 5) or (py == 6):
+      xyz3[0] = xyz[2]
+      xyz3[1] = xyz[0]
+      xyz3[2] = xyz[1]
+
+    q = np.sqrt(np.float64(max(2.0 * rs / (rs + np.abs(xyz3[2]) + eps),0.0)))
+    xyz2[0] = xyz3[0] * q
+    xyz2[1] = xyz3[1] * q
+    sign = 1.0 if (xyz3[2] >= 0.0) else -1.0
+    xyz2[2] = sign * rs / LPpref
+
+    qxy = 0.0
+    for j in range(2):
+      qxy += xyz2[j] * xyz2[j]
+
+    if qxy == 0.0:
+      xyz1[0] = 0.0
+      xyz1[1] = 0.0
+    else:
+      xyswitch = np.abs(xyz2[1]) <= np.abs(xyz2[0])
+      if xyswitch:
+        x = xyz2[0]
+        y = xyz2[1]
+      else:
+        x = xyz2[1]
+        y = xyz2[0]
+      q2xy = qxy + x * x
+      sq2xy = np.sqrt(q2xy)
+
+      q = q2xy * qxy / (q2xy - np.abs(x) * sq2xy)
+      q = np.sqrt(np.float64(max(q,0.0)))
+      q *= LPbeta / LPr2 / LPR1
+
+      tt = (y * y + np.abs(x) * sq2xy) / LPr2 / qxy
+      if tt > 1.0:
+        tt = 1.0
+      if tt < -1.0:
+        tt = -1.0
+
+      ac = np.arccos(tt)
+      sx = 1.0 if (x >= 0.0) else -1.0
+      sy = 1.0 if (y >= 0.0) else -1.0
+
+      T1inv = q * sx
+      T2inv = q * sy * ac / LPpi12
+
+      if xyswitch:
+        xyz1[0] = T1inv
+        xyz1[1] = T2inv
+      else:
+        xyz1[1] = T1inv
+        xyz1[0] = T2inv
+
+    xyz1[2] = xyz2[2]
+    for j in range(3):
+      xyz1[j] *= 1.0 / LPsc
+
+    if (py == 1) or (py == 2):
+      xyzcu[0] = xyz1[0]
+      xyzcu[1] = xyz1[1]
+      xyzcu[2] = xyz1[2]
+    if (py == 3) or (py == 4):
+      xyzcu[0] = xyz1[2]
+      xyzcu[1] = xyz1[0]
+      xyzcu[2] = xyz1[1]
+    if (py == 5) or (py == 6):
+      xyzcu[0] = xyz1[1]
+      xyzcu[1] = xyz1[2]
+      xyzcu[2] = xyz1[0]
+    for j in range(3):
+      cu[i, j] = xyzcu[j]
   return cu
 
 def cu2ho(cu,p=P):
@@ -721,14 +965,132 @@ def cu2ho(cu,p=P):
   return ho
 
 
-@numba.jit(nopython=True,fastmath=nbFastmath,cache=nbcache,parallel=nbParallel)
+@numba.jit(nopython=True,fastmath=nbFastmath,cache=nbcache, parallel=nbParallel)
 def cu2hoL(cuIn,p=P):
   pf = numba.float32(p > 0) * 2.0 - 1.0
   cu,m,n,intype = prepIn(cuIn)
   ho = np.zeros((n,3),dtype=intype)
+  LPap = np.float64(2.14502939711103)  # pi**(2/3)
+  LPa = np.float64(1.92574901995825)  # pi**(5/6)/6**(1/6)
+  LPsc = np.float64(0.897772786961286)  # a/ap == (pi**(5/6)/6**(1/6)) / pi**(2/3)
+  LPpref = np.float64(1.38197659788534)  # sqrt(6/pi)
+  LPpi12 = np.float64(0.261799387799149)  # pi/12
+  LPr2 = np.float64(1.4142135623731)  # sqrt(2)
+  LPprek = np.float64(1.6434564029725)  # R1 2**(1/4)/beta == (3pi/4)^(1/3) * 2**(1/4) / (pi**(5/6)/6**(1/6)/2)
+  LPsPi = np.float64(1.77245385090552)  # sqrt(pi)
+  LPr24 = np.float64(4.89897948556636)  # sqrt(24)
+  eps_loc = 2e-6
+
+
+
+  # I have inlined all the function of lambert3DCubeToBall
+  # numba really dislikes nested function calls.  This was about a 10x speedup.
+  # for i in numba.prange(n):
+  #   ho[i, :] = lambert3DCubeToBall(cu[i,:])
 
   for i in numba.prange(n):
-    ho[i, :] = lambert3DCubeToBall(cu[i,:])
+    xyz = np.zeros(3,dtype=np.float64)
+    xyzba = np.zeros(3,dtype=np.float64)
+    sXYZ = np.zeros(3,dtype=np.float64)
+    #xyz[:] = cu[i,:]
+    xyz[0] = cu[i,0]
+    xyz[1] = cu[i,1]
+    xyz[2] = cu[i,2]
+    mx = np.abs(xyz).max()
+
+    # if mx > (LPap/2.0 + eps_loc):
+    #  return np.float64([-5,-5, -5]) #xyzba out of range
+
+    py = 10
+    if (np.abs(xyz[0]) <= xyz[2]) and (np.abs(xyz[1]) <= xyz[2]):
+      py = 1
+    if (np.abs(xyz[0]) <= -xyz[2]) and (np.abs(xyz[1]) <= -xyz[2]):
+      py = 2
+    if (np.abs(xyz[2]) <= xyz[0]) and (np.abs(xyz[1]) <= xyz[0]):
+      py = 3
+    if (np.abs(xyz[2]) <= -xyz[0]) and (np.abs(xyz[1]) <= -xyz[0]):
+      py = 4
+    if (np.abs(xyz[0]) <= xyz[1]) and (np.abs(xyz[2]) <= xyz[1]):
+      py = 5
+    if (np.abs(xyz[0]) <= -xyz[1]) and (np.abs(xyz[2]) <= -xyz[1]):
+      py = 6
+
+    if (py == 1) or (py == 2):
+      sXYZ[0] = xyz[0]
+      sXYZ[1] = xyz[1]
+      sXYZ[2] = xyz[2]
+    if (py == 3) or (py == 4):
+      sXYZ[0] = xyz[1]
+      sXYZ[1] = xyz[2]
+      sXYZ[2] = xyz[0]
+    if (py == 5) or (py == 6):
+      sXYZ[0] = xyz[2]
+      sXYZ[1] = xyz[0]
+      sXYZ[2] = xyz[1]
+
+    for j in range(3):
+      sXYZ[j] = sXYZ[j] * LPsc
+
+    if mx < eps:
+      sXYZ[:] = 0.0
+    else:
+      absX = np.abs(sXYZ[0])
+      absY = np.abs(sXYZ[1])
+
+      if (absX < eps) and (absY < eps):
+        sXYZ[0] = 0.0
+        sXYZ[1] = 0.0
+        sXYZ[2] = LPpref * sXYZ[2]
+      else:
+        z = np.float64(sXYZ[2])
+        xyswitch = np.abs(sXYZ[1]) <= np.abs(sXYZ[0])
+        if xyswitch:
+          x = np.float64(sXYZ[0])
+          y = np.float64(sXYZ[1])
+        else:
+          x = np.float64(sXYZ[1])
+          y = np.float64(sXYZ[0])
+
+        q = LPpi12 * y / x
+        c = np.float64(np.cos(q))
+        s = np.float64(np.sin(q))
+
+        q = LPprek * x / np.sqrt(np.float64(max(LPr2 - c,0.0)))
+        T1p = (LPr2 * c - 1.0) * q
+        T2p = LPr2 * s * q
+        if xyswitch:
+          T1 = np.float64(T1p)
+          T2 = np.float64(T2p)
+        else:
+          T1 = np.float64(T2p)
+          T2 = np.float64(T1p)
+
+        c = T1 * T1 + T2 * T2
+        s = np.pi * c / (24.0 * z * z)
+
+        c = LPsPi * c / LPr24 / z
+        q = np.sqrt(np.float64(max([1.0 - s,0.0])))
+
+        sXYZ[0] = T1 * q
+        sXYZ[1] = T2 * q
+        sXYZ[2] = LPpref * z - c
+
+    if (py == 1) or (py == 2):
+      xyzba[0] = sXYZ[0]
+      xyzba[1] = sXYZ[1]
+      xyzba[2] = sXYZ[2]
+    if (py == 3) or (py == 4):
+      xyzba[0] = sXYZ[2]
+      xyzba[1] = sXYZ[0]
+      xyzba[2] = sXYZ[1]
+    if (py == 5) or (py == 6):
+      xyzba[0] = sXYZ[1]
+      xyzba[1] = sXYZ[2]
+      xyzba[2] = sXYZ[0]
+
+    for j in range(3):
+      ho[i,j] = xyzba[j]
+
   return ho
 
 # cross dependant codes start here
@@ -752,10 +1114,16 @@ def eu2ho(eu,p=P):
   ho = ax2ho(eu2ax(eu, p=p), p=p)
   return ho
 
-def om2qu(om,p=P):
+def om2qu_old(om,p=P):
   '''orientation matrix to quaternion (scalar-vector)  '''
   qu = ax2qu(om2ax(om, p=p), p=p)
   return qu
+
+def om2ax(om,p=P):
+  '''orientation matrix to quaternion (scalar-vector)  '''
+  ax = qu2ax(om2qu(om, p=p), p=p)
+  return ax
+
 
 def om2ro(om,p=P):
   '''orientation matrix to Rodrigues-Frank vector  '''
@@ -850,9 +1218,9 @@ def cu2qu(cu,p=P):
 # Lambert Ball <--> Cube codes
 
 
-@numba.jit(nopython=True,fastmath=nbFastmath,cache=nbcache)
+@numba.jit(['int32(f8[:])','int32(f4[:])'], nopython=True,fastmath=nbFastmath,cache=nbcache)
 def lambertGetPyramid(xyz):
-  out = 10
+  out = numba.int32(10)
   if (np.abs(xyz[0]) <= xyz[2]) and (np.abs(xyz[1]) <= xyz[2]):
     out = 1
   if (np.abs(xyz[0]) <= -xyz[2] ) and (np.abs(xyz[1]) <= -xyz[2]):
@@ -867,7 +1235,7 @@ def lambertGetPyramid(xyz):
     out = 6
   return out
 
-@numba.jit(nopython=True,fastmath=nbFastmath,cache=nbcache)
+@numba.jit(['f8[:](f8[:])','f8[:](f4[:])'], nopython=True,fastmath=nbFastmath,cache=nbcache)
 def lambert3DCubeToBall(xyz):
   LPap = np.float64(2.14502939711103) # pi**(2/3)
   LPa =   np.float64(1.92574901995825) # pi**(5/6)/6**(1/6)
@@ -878,14 +1246,14 @@ def lambert3DCubeToBall(xyz):
   LPprek =  np.float64(1.6434564029725) # R1 2**(1/4)/beta == (3pi/4)^(1/3) * 2**(1/4) / (pi**(5/6)/6**(1/6)/2)
   LPsPi =  np.float64(1.77245385090552) # sqrt(pi)
   LPr24 =  np.float64(4.89897948556636) # sqrt(24)
-  eps_loc = 1e-7
+  eps_loc = 2e-6
 
   xyzba = np.zeros(3, dtype = np.float64)
   sXYZ = np.zeros(3, dtype = np.float64)
   mx = np.abs(xyz).max()
 
-  if mx > (LPap/2.0 + eps_loc):
-    return np.float64([-5,-5, -5]) #xyzba out of range
+  #if mx > (LPap/2.0 + eps_loc):
+  #  return np.float64([-5,-5, -5]) #xyzba out of range
 
   p = lambertGetPyramid(xyz)
 
@@ -966,7 +1334,7 @@ def lambert3DCubeToBall(xyz):
   return xyzba
 
 
-@numba.jit(nopython=True,fastmath=nbFastmath, cache=nbcache)
+@numba.jit(['f8[:](f8[:])','f8[:](f4[:])'], nopython=True,fastmath=nbFastmath, cache=nbcache)
 def lambert3DBallToCube(xyz):
   LPR1 = np.float(1.33067003949147) # (3pi/4)**(1/3)
   LPpref = np.float(1.38197659788534) # sqrt(6/pi)
@@ -985,8 +1353,8 @@ def lambert3DBallToCube(xyz):
     rs += xyz[i] * xyz[i]
   rs = np.sqrt(np.float64(max(rs, 0.0)))
 
-  if rs > (LPR1 + eps_loc):
-    return xyzcu-np.float64(5.0) # out of range
+  #if rs > (LPR1 + eps_loc):
+  #  return xyzcu-np.float64(5.0) # out of range
 
   p = lambertGetPyramid(xyz)
   if (p == 1) or (p == 2):
